@@ -16,8 +16,9 @@ function startElectron() {
     if (electronProcess) {
         electronProcess.removeAllListeners();
     }
+    const electronPath = require('electron');
     electronProcess = spawn(
-        process.platform === 'win32' ? 'electron.cmd' : 'electron',
+        electronPath,
         [path.resolve('dist/')],
         {stdio: 'inherit'},
     );
