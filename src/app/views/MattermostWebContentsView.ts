@@ -93,6 +93,7 @@ export class MattermostWebContentsView extends EventEmitter {
         });
         this.webContentsView.webContents.on('did-navigate-in-page', () => this.handlePageTitleUpdated(this.webContentsView.webContents.getTitle()));
         this.webContentsView.webContents.on('page-title-updated', (_, newTitle) => this.handlePageTitleUpdated(newTitle));
+        this.webContentsView.webContents.on('did-finish-load', () => this.injectImageClickInterceptor());
 
         if (!DeveloperMode.get('disableContextMenu')) {
             this.contextMenu = new ContextMenu(this.generateContextMenu(), this.webContentsView.webContents);
@@ -479,6 +480,87 @@ export class MattermostWebContentsView extends EventEmitter {
 
     private handleAltBlur = () => {
         this.altPressStatus = false;
+    };
+
+    private injectImageClickInterceptor = () => {
+        const script = `
+            (function() {
+                // 拦截图片点击事件
+                document.addEventListener('click', function(e) {
+                    let target = e.target;
+                    let imageUrl = null;
+                    
+                    // 只处理直接点击img标签的情况
+                    if (target.tagName === 'IMG') {
+                        // 排除emoji、头像、图标等小图片
+                        // 检查是否是emoji (通常有emoji相关的class或者在emoji选择器中)
+                        if (target.classList.contains('emoji') || 
+                            target.classList.contains('emoticon') ||
+                            target.closest('.emoji-picker') ||
+                            target.closest('.post__body') && target.classList.contains('emoji-picker__item') ||
+                            target.alt && target.alt.startsWith(':') && target.alt.endsWith(':')) {
+                            return; // 不处理emoji
+                        }
+                        
+                        // 排除用户头像
+                        if (target.classList.contains('avatar') ||
+                            target.classList.contains('profile-icon') ||
+                            target.classList.contains('status-wrapper') ||
+                            target.closest('.post__img')) {
+                            return; // 不处理头像
+                        }
+                        
+                        // 排除小图标和按钮中的图片 (通常小于100x100)
+                        if (target.width < 100 && target.height < 100) {
+                            return; // 不处理小图标
+                        }
+                        
+                        imageUrl = target.src;
+                    } 
+                    // 或者点击了图片的直接包装元素(通常是带有特定class的div或a标签)
+                    else if (target.classList && (
+                        target.classList.contains('file-preview__image') ||
+                        target.classList.contains('post-image__thumbnail') ||
+                        target.classList.contains('img-div')
+                    )) {
+                        // 确保这个元素直接包含img,且用户点击的区域确实在图片上
+                        const img = target.querySelector('img');
+                        if (img) {
+                            // 检查点击位置是否在图片范围内
+                            const rect = img.getBoundingClientRect();
+                            const x = e.clientX;
+                            const y = e.clientY;
+                            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                                imageUrl = img.src;
+                            }
+                        }
+                    }
+                    
+                    // 如果找到了图片URL且是http/https协议
+                    if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+                        // 排除emoji URL (通常包含emoji路径)
+                        if (imageUrl.includes('/emoji/') || imageUrl.includes('emoji')) {
+                            return;
+                        }
+                        
+                        // 检查是否是实际的图片文件(通过URL或MIME类型)
+                        const isImageUrl = /\\.(jpg|jpeg|png|gif|webp|bmp|svg)(\\?.*)?$/i.test(imageUrl) || 
+                                          imageUrl.includes('/files/') || 
+                                          imageUrl.includes('/api/v4/files/');
+                        
+                        if (isImageUrl && window.desktopAPI && window.desktopAPI.openImageExternally) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.desktopAPI.openImageExternally(imageUrl);
+                        }
+                    }
+                }, true); // 使用捕获阶段以确保优先拦截
+            })();
+        `;
+        
+        this.webContentsView.webContents.executeJavaScript(script).catch((err) => {
+            this.log.error('Failed to inject image click interceptor', err);
+        });
     };
 
     private generateContextMenu = (): Options => {

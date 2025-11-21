@@ -50,6 +50,7 @@ import {
     MESSAGE_FROM_PARENT,
     MESSAGE_FROM_POPOUT,
     POPOUT_CLOSED,
+    OPEN_IMAGE_IN_EXTERNAL_VIEWER,
 } from 'common/communication';
 
 import type {ExternalAPI} from 'types/externalAPI';
@@ -143,6 +144,9 @@ const desktopAPI: DesktopAPI = {
     sendToPopout: (id, channel, ...args) => ipcRenderer.send(SEND_TO_POPOUT, id, channel, ...args),
     onMessageFromPopout: (listener) => createListener(MESSAGE_FROM_POPOUT, listener),
     onPopoutClosed: (listener) => createListener(POPOUT_CLOSED, listener),
+
+    // Image preview
+    openImageExternally: (imageUrl: string) => ipcRenderer.send(OPEN_IMAGE_IN_EXTERNAL_VIEWER, imageUrl),
 };
 contextBridge.exposeInMainWorld('desktopAPI', desktopAPI);
 

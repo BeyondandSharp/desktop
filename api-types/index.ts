@@ -129,4 +129,7 @@ export type DesktopAPI = {
     sendToPopout: (id: string, channel: string, ...args: unknown[]) => void;
     onMessageFromPopout: (listener: (id: string, channel: string, ...args: unknown[]) => void) => () => void;
     onPopoutClosed: (listener: (id: string) => void) => () => void;
+
+    // Image preview
+    openImageExternally: (imageUrl: string) => void;
 }

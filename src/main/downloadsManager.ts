@@ -25,6 +25,7 @@ import {
     UPDATE_DOWNLOADS_DROPDOWN,
     UPDATE_PATHS,
     UPDATE_PROGRESS,
+    OPEN_IMAGE_IN_EXTERNAL_VIEWER,
 } from 'common/communication';
 import Config from 'common/config';
 import {APP_UPDATE_KEY, UPDATE_DOWNLOAD_ITEM} from 'common/constants';
@@ -52,6 +53,7 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
     downloads: DownloadedItems;
     willDownloadURLs: Map<string, {filePath: string; bookmark?: string}>;
     bookmarks: Map<string, {originalPath: string; bookmark: string}>;
+    imagePreviewDownloads: Set<string>;
 
     constructor(file: string) {
         super(file);
@@ -61,6 +63,7 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
         this.progressingItems = new Map();
         this.willDownloadURLs = new Map();
         this.bookmarks = new Map();
+        this.imagePreviewDownloads = new Set();
         this.autoCloseTimeout = null;
         this.downloads = {};
 
@@ -94,6 +97,7 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
         ipcMain.removeListener(UPDATE_DOWNLOADED, this.onUpdateDownloaded);
         ipcMain.removeListener(UPDATE_PROGRESS, this.onUpdateProgress);
         ipcMain.removeListener(NO_UPDATE_AVAILABLE, this.noUpdateAvailable);
+        ipcMain.removeListener(OPEN_IMAGE_IN_EXTERNAL_VIEWER, this.handleImagePreview);
 
         ipcMain.handle(GET_DOWNLOAD_LOCATION, this.handleSelectDownload);
         ipcMain.on(DOWNLOADS_DROPDOWN_FOCUSED, this.clearAutoCloseTimeout);
@@ -101,6 +105,7 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
         ipcMain.on(UPDATE_DOWNLOADED, this.onUpdateDownloaded);
         ipcMain.on(UPDATE_PROGRESS, this.onUpdateProgress);
         ipcMain.on(NO_UPDATE_AVAILABLE, this.noUpdateAvailable);
+        ipcMain.on(OPEN_IMAGE_IN_EXTERNAL_VIEWER, this.handleImagePreview);
     };
 
     handleNewDownload = async (event: Event, item: DownloadItem, webContents: WebContents) => {
@@ -556,6 +561,9 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
     private doneEventController = async (doneEvent: Event, state: DownloadItemDoneEventState, item: DownloadItem, webContents: WebContents) => {
         log.debug('doneEventController');
 
+        const itemUrl = item.getURL();
+        const isImagePreview = this.imagePreviewDownloads.has(itemUrl);
+
         if (state === 'completed' && !this.open) {
             const view = WebContentsManager.getViewByWebContentsId(webContents.id);
             if (!view) {
@@ -565,7 +573,10 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
             if (!server) {
                 return;
             }
-            NotificationManager.displayDownloadCompleted(path.basename(item.savePath), item.savePath, server.name);
+            // 不为图片预览显示下载完成通知
+            if (!isImagePreview) {
+                NotificationManager.displayDownloadCompleted(path.basename(item.savePath), item.savePath, server.name);
+            }
         }
 
         const bookmark = this.bookmarks.get(this.getFileId(item));
@@ -578,6 +589,22 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
         await this.upsertFileToDownloads(item, state, bookmark?.originalPath);
         this.fileSizes.delete(item.getFilename());
         this.progressingItems.delete(this.getFileId(item));
+        
+        // 如果是图片预览下载且下载成功,自动打开文件
+        if (isImagePreview && state === 'completed') {
+            this.imagePreviewDownloads.delete(itemUrl);
+            const downloadedItem: DownloadedItem = this.downloads[this.getFileId(item)];
+            if (downloadedItem) {
+                // 使用 setTimeout 确保文件已完全写入
+                setTimeout(() => {
+                    this.openFile(downloadedItem);
+                }, 100);
+            }
+        } else if (isImagePreview) {
+            // 下载失败或被取消,清除标记
+            this.imagePreviewDownloads.delete(itemUrl);
+        }
+        
         this.shouldAutoClose();
         this.shouldShowBadge();
     };
@@ -741,6 +768,44 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
             !file.state ||
             !file.type;
     }
+
+    handleImagePreview = async (event: Event, imageUrl: string) => {
+        log.debug('handleImagePreview', {imageUrl});
+
+        try {
+            // 从URL中提取文件名
+            const parsedUrl = new URL(imageUrl);
+            const pathname = parsedUrl.pathname;
+            const filename = path.basename(pathname) || `image_${Date.now()}.jpg`;
+            
+            // 确保文件名有扩展名
+            const hasExtension = /\.[a-zA-Z0-9]+$/.test(filename);
+            const finalFilename = hasExtension ? filename : `${filename}.jpg`;
+            
+            // 设置临时文件路径
+            const tempDir = app.getPath('temp');
+            const tempFilePath = path.join(tempDir, 'mattermost-images', finalFilename);
+            
+            // 确保临时目录存在
+            const tempImageDir = path.join(tempDir, 'mattermost-images');
+            if (!fs.existsSync(tempImageDir)) {
+                fs.mkdirSync(tempImageDir, {recursive: true});
+            }
+
+            // 将图片URL标记为待下载并触发下载
+            this.willDownloadURLs.set(imageUrl, {filePath: tempFilePath});
+            // 标记这是图片预览下载,下载完成后自动打开
+            this.imagePreviewDownloads.add(imageUrl);
+            
+            // 获取发起请求的webContents
+            const webContents = event.sender;
+            if (webContents) {
+                webContents.downloadURL(imageUrl);
+            }
+        } catch (err) {
+            log.error('handleImagePreview error', {err});
+        }
+    };
 }
 
 let downloadsManager = new DownloadsManager(downloadsJson);
