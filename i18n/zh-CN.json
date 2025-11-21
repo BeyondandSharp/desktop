@@ -301,7 +301,7 @@
   "renderer.components.settingsPage.enableMetrics": "发送匿名使用数据至您配置的服务器",
   "renderer.components.settingsPage.enableMetrics.description": "发送关于应用和其性能的使用数据至您配置的接收服务器。",
   "renderer.components.settingsPage.externalViewerExtensions": "外部查看器文件",
-  "renderer.components.settingsPage.externalViewerExtensions.description": "文件扩展名被包含在列表内，点击时将使用外部查看器打开的文件。输入用逗号分隔的扩展名(例如：jpg, png, pdf)。如果未设置，默认为 jpg, png, gif。",
+  "renderer.components.settingsPage.externalViewerExtensions.description": "文件扩展名被包含在列表内，点击时将使用外部查看器打开的文件。输入用逗号分隔的扩展名(例如：jpg, png, pdf)。如果未设置，默认为 jpg, png。",
   "renderer.components.settingsPage.flashWindow": "当收到新消息时，闪烁任务栏图标",
   "renderer.components.settingsPage.flashWindow.description": "如果启用，当收到新消息时，任务栏图标将闪烁几秒钟。",
   "renderer.components.settingsPage.flashWindow.description.linuxFunctionality": "此功能可能不适用于所有Linux窗口管理器。",

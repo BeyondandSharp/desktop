@@ -266,7 +266,7 @@ export class Config extends EventEmitter {
     }
 
     get externalViewerExtensions() {
-        return this.combinedData?.externalViewerExtensions ?? ['jpg', 'png', 'gif', 'txt'];
+        return this.combinedData?.externalViewerExtensions ?? ['jpg', 'png'];
     }
 
     /**
