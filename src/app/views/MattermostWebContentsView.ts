@@ -93,7 +93,7 @@ export class MattermostWebContentsView extends EventEmitter {
         });
         this.webContentsView.webContents.on('did-navigate-in-page', () => this.handlePageTitleUpdated(this.webContentsView.webContents.getTitle()));
         this.webContentsView.webContents.on('page-title-updated', (_, newTitle) => this.handlePageTitleUpdated(newTitle));
-        this.webContentsView.webContents.on('did-finish-load', () => this.injectImageClickInterceptor());
+        this.webContentsView.webContents.on('did-finish-load', () => this.injectFileAndImageClickInterceptor());
 
         if (!DeveloperMode.get('disableContextMenu')) {
             this.contextMenu = new ContextMenu(this.generateContextMenu(), this.webContentsView.webContents);
@@ -482,18 +482,44 @@ export class MattermostWebContentsView extends EventEmitter {
         this.altPressStatus = false;
     };
 
-    private injectImageClickInterceptor = () => {
+    private injectFileAndImageClickInterceptor = () => {
         const script = `
             (function() {
-                // 拦截图片点击事件
+                // 拦截图片和文件点击事件
                 document.addEventListener('click', function(e) {
                     let target = e.target;
-                    let imageUrl = null;
+                    let fileUrl = null;
+                    let isImage = false;
                     
-                    // 只处理直接点击img标签的情况
-                    if (target.tagName === 'IMG') {
+                    // 1. 检查是否点击了文件附件
+                    // 文件附件通常在 .post-image__column 或 .file-preview 容器中
+                    let fileContainer = target.closest('.post-file__container, .file-preview, .post-image__column');
+                    if (fileContainer) {
+                        // 查找下载链接
+                        let downloadLink = null;
+                        
+                        // 可能是点击了文件图标或文件名
+                        if (target.tagName === 'A' && target.href) {
+                            downloadLink = target;
+                        } else {
+                            downloadLink = fileContainer.querySelector('a[download], a[href*="/files/"]');
+                        }
+                        
+                        if (downloadLink && downloadLink.href) {
+                            const href = downloadLink.href;
+                            // 检查是否是文件下载链接
+                            if (href.includes('/files/') || href.includes('/api/v4/files/')) {
+                                fileUrl = href;
+                                // 判断是否是图片
+                                isImage = /\\.(jpg|jpeg|png|gif|webp|bmp|svg)(\\?.*)?$/i.test(href) ||
+                                         fileContainer.querySelector('img') !== null;
+                            }
+                        }
+                    }
+                    
+                    // 2. 如果不是文件容器,检查是否直接点击了图片
+                    if (!fileUrl && target.tagName === 'IMG') {
                         // 排除emoji、头像、图标等小图片
-                        // 检查是否是emoji (通常有emoji相关的class或者在emoji选择器中)
                         if (target.classList.contains('emoji') || 
                             target.classList.contains('emoticon') ||
                             target.closest('.emoji-picker') ||
@@ -515,15 +541,15 @@ export class MattermostWebContentsView extends EventEmitter {
                             return; // 不处理小图标
                         }
                         
-                        imageUrl = target.src;
+                        fileUrl = target.src;
+                        isImage = true;
                     } 
-                    // 或者点击了图片的直接包装元素(通常是带有特定class的div或a标签)
-                    else if (target.classList && (
+                    // 3. 或者点击了图片的直接包装元素
+                    else if (!fileUrl && target.classList && (
                         target.classList.contains('file-preview__image') ||
                         target.classList.contains('post-image__thumbnail') ||
                         target.classList.contains('img-div')
                     )) {
-                        // 确保这个元素直接包含img,且用户点击的区域确实在图片上
                         const img = target.querySelector('img');
                         if (img) {
                             // 检查点击位置是否在图片范围内
@@ -531,27 +557,28 @@ export class MattermostWebContentsView extends EventEmitter {
                             const x = e.clientX;
                             const y = e.clientY;
                             if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                                imageUrl = img.src;
+                                fileUrl = img.src;
+                                isImage = true;
                             }
                         }
                     }
                     
-                    // 如果找到了图片URL且是http/https协议
-                    if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
-                        // 排除emoji URL (通常包含emoji路径)
-                        if (imageUrl.includes('/emoji/') || imageUrl.includes('emoji')) {
+                    // 如果找到了文件URL且是http/https协议
+                    if (fileUrl && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'))) {
+                        // 排除emoji URL
+                        if (fileUrl.includes('/emoji/') || fileUrl.includes('emoji')) {
                             return;
                         }
                         
-                        // 检查是否是实际的图片文件(通过URL或MIME类型)
-                        const isImageUrl = /\\.(jpg|jpeg|png|gif|webp|bmp|svg)(\\?.*)?$/i.test(imageUrl) || 
-                                          imageUrl.includes('/files/') || 
-                                          imageUrl.includes('/api/v4/files/');
+                        // 检查是否是文件下载链接
+                        const isFileUrl = /\\.(jpg|jpeg|png|gif|webp|bmp|svg|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|zip|rar|7z|tar|gz)(\\?.*)?$/i.test(fileUrl) || 
+                                         fileUrl.includes('/files/') || 
+                                         fileUrl.includes('/api/v4/files/');
                         
-                        if (isImageUrl && window.desktopAPI && window.desktopAPI.openImageExternally) {
+                        if (isFileUrl && window.desktopAPI && window.desktopAPI.openImageExternally) {
                             e.preventDefault();
                             e.stopPropagation();
-                            window.desktopAPI.openImageExternally(imageUrl);
+                            window.desktopAPI.openImageExternally(fileUrl);
                         }
                     }
                 }, true); // 使用捕获阶段以确保优先拦截
@@ -559,7 +586,7 @@ export class MattermostWebContentsView extends EventEmitter {
         `;
         
         this.webContentsView.webContents.executeJavaScript(script).catch((err) => {
-            this.log.error('Failed to inject image click interceptor', err);
+            this.log.error('Failed to inject file and image click interceptor', err);
         });
     };
 

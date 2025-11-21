@@ -3,7 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import type {DownloadItem, Event, WebContents, FileFilter, IpcMainInvokeEvent} from 'electron';
+import type {DownloadItem, Event, WebContents, FileFilter, IpcMainInvokeEvent, IpcMainEvent} from 'electron';
 import {ipcMain, dialog, shell, Menu, app, nativeImage} from 'electron';
 import type {ProgressInfo, UpdateInfo} from 'electron-updater';
 
@@ -117,11 +117,19 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
             const info = this.willDownloadURLs.get(url)!;
             this.willDownloadURLs.delete(url);
 
+            let finalPath = info.filePath;
+            
+            // 如果 filePath 是目录而不是完整路径,则添加文件名
+            if (fs.existsSync(info.filePath) && fs.statSync(info.filePath).isDirectory()) {
+                const filename = item.getFilename();
+                finalPath = path.join(info.filePath, filename);
+            }
+
             if (info.bookmark) {
-                item.setSavePath(path.resolve(app.getPath('temp'), path.basename(info.filePath)));
-                this.bookmarks.set(this.getFileId(item), {originalPath: info.filePath, bookmark: info.bookmark!});
+                item.setSavePath(path.resolve(app.getPath('temp'), path.basename(finalPath)));
+                this.bookmarks.set(this.getFileId(item), {originalPath: finalPath, bookmark: info.bookmark!});
             } else {
-                item.setSavePath(info.filePath);
+                item.setSavePath(finalPath);
             }
 
             await this.upsertFileToDownloads(item, 'progressing');
@@ -769,31 +777,20 @@ export class DownloadsManager extends JsonFileManager<DownloadedItems> {
             !file.type;
     }
 
-    handleImagePreview = async (event: Event, imageUrl: string) => {
+    handleImagePreview = async (event: IpcMainEvent, imageUrl: string) => {
         log.debug('handleImagePreview', {imageUrl});
 
         try {
-            // 从URL中提取文件名
-            const parsedUrl = new URL(imageUrl);
-            const pathname = parsedUrl.pathname;
-            const filename = path.basename(pathname) || `image_${Date.now()}.jpg`;
-            
-            // 确保文件名有扩展名
-            const hasExtension = /\.[a-zA-Z0-9]+$/.test(filename);
-            const finalFilename = hasExtension ? filename : `${filename}.jpg`;
-            
-            // 设置临时文件路径
-            const tempDir = app.getPath('temp');
-            const tempFilePath = path.join(tempDir, 'mattermost-images', finalFilename);
-            
             // 确保临时目录存在
+            const tempDir = app.getPath('temp');
             const tempImageDir = path.join(tempDir, 'mattermost-images');
             if (!fs.existsSync(tempImageDir)) {
                 fs.mkdirSync(tempImageDir, {recursive: true});
             }
 
-            // 将图片URL标记为待下载并触发下载
-            this.willDownloadURLs.set(imageUrl, {filePath: tempFilePath});
+            // 不指定具体文件名,让下载流程自动从响应头或URL中获取
+            // 只标记下载位置为临时目录,文件名将由 handleNewDownload 中的逻辑决定
+            this.willDownloadURLs.set(imageUrl, {filePath: tempImageDir});
             // 标记这是图片预览下载,下载完成后自动打开
             this.imagePreviewDownloads.add(imageUrl);
             
