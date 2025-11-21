@@ -23,6 +23,7 @@ import {
     BROWSER_HISTORY_PUSH,
     RELOAD_VIEW,
 } from 'common/communication';
+import Config from 'common/config';
 import type {Logger} from 'common/log';
 import ServerManager from 'common/servers/serverManager';
 import {RELOAD_INTERVAL, MAX_SERVER_RETRIES, SECOND, MAX_LOADING_SCREEN_SECONDS} from 'common/utils/constants';
@@ -483,12 +484,20 @@ export class MattermostWebContentsView extends EventEmitter {
     };
 
     private injectFileAndImageClickInterceptor = () => {
+        // 从配置中获取后缀名列表,如果未配置则使用默认值
+        const extensions = Config.externalViewerExtensions || ['jpg', 'png', 'gif'];
+        const extensionList = JSON.stringify(extensions);
+        
         const script = `
             (function() {
+                // 从配置获取的后缀名列表
+                const extensionList = ${extensionList};
+                
                 // 拦截图片和文件点击事件
                 document.addEventListener('click', function(e) {
                     let target = e.target;
                     let fileUrl = null;
+                    let fileName = null;
                     let isImage = false;
                     
                     // 1. 检查是否点击了文件附件
@@ -510,10 +519,23 @@ export class MattermostWebContentsView extends EventEmitter {
                             // 检查是否是文件下载链接
                             if (href.includes('/files/') || href.includes('/api/v4/files/')) {
                                 fileUrl = href;
+                                fileName = downloadLink.download;
                                 // 判断是否是图片
                                 isImage = /\\.(jpg|jpeg|png|gif|webp|bmp|svg)(\\?.*)?$/i.test(href) ||
                                          fileContainer.querySelector('img') !== null;
                             }
+                        }
+                    }
+
+                    // 检查文件扩展名是否在允许列表中
+                    if (!fileUrl && target.tagName === 'IMG') {
+                        fileName = target.getAttribute('aria-label');
+                    }
+                    if (fileName) {
+                        const extension = fileName.substring(fileName.lastIndexOf('.') + 1);
+                        // 检查文件名后缀是否不在配置的列表中
+                        if (!extensionList.includes(extension.toLowerCase())) {
+                            return; // 跳过处理
                         }
                     }
                     

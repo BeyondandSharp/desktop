@@ -57,6 +57,7 @@ export type ConfigV4 = {
     enableMetrics?: boolean;
     viewLimit?: number;
     themeSyncing?: boolean;
+    externalViewerExtensions?: string[];
 }
 
 export type ConfigV3 = Omit<ConfigV4,

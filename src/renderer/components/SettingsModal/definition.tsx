@@ -11,6 +11,7 @@ import type {SettingsDefinition} from 'types/settings';
 
 import CheckSetting from './components/CheckSetting';
 import DownloadSetting from './components/DownloadSetting';
+import ExtensionListSetting from './components/ExtensionListSetting';
 import NotificationSetting from './components/NotificationSetting';
 import NumberSetting from './components/NumberSetting';
 import RadioSetting from './components/RadioSetting';
@@ -491,6 +492,25 @@ const definition: (intl: IntlShape) => Promise<SettingsDefinition> = async (intl
                                 />
                             </>
                         ),
+                    },
+                },
+                {
+                    id: 'externalViewerExtensions',
+                    component: ExtensionListSetting,
+                    props: {
+                        label: (
+                            <FormattedMessage
+                                id='renderer.components.settingsPage.externalViewerExtensions'
+                                defaultMessage='External viewer file extensions'
+                            />
+                        ),
+                        subLabel: (
+                            <FormattedMessage
+                                id='renderer.components.settingsPage.externalViewerExtensions.description'
+                                defaultMessage='File extensions that will be opened in external viewer when clicked. Enter extensions separated by commas (e.g., jpg, png, pdf). Default is jpg, png, gif if not set.'
+                            />
+                        ),
+                        placeholder: 'jpg, png, gif, pdf, doc, docx, txt',
                     },
                 },
             ],

@@ -54,6 +54,7 @@ const defaultPreferences: ConfigV4 = {
     enableMetrics: true,
     viewLimit: 15,
     themeSyncing: true,
+    externalViewerExtensions: ['jpg', 'png', 'gif'],
 };
 
 export default defaultPreferences;

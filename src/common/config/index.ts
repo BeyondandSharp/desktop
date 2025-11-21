@@ -265,6 +265,10 @@ export class Config extends EventEmitter {
         return this.combinedData?.themeSyncing ?? true;
     }
 
+    get externalViewerExtensions() {
+        return this.combinedData?.externalViewerExtensions ?? ['jpg', 'png', 'gif', 'txt'];
+    }
+
     /**
      * Gets the servers from registry into the config object and reload
      *
